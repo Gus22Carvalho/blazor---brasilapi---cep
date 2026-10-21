@@ -1,0 +1,142 @@
+﻿@page "/"
+@using BlazorWasmBrasilApiCep.Models
+@using System.Text.Json.Serialization
+@inject HttpClient Http
+
+<PageTitle>Consulta CEP - BrasilAPI</PageTitle>
+
+<div class="container mt-4" style="max-width: 650px;">
+    <h3 class="mb-3 text-center">Consultar CEP</h3>
+
+    <div class="card p-4 shadow-sm mb-4">
+        <EditForm Model="this" OnValidSubmit="BuscarCep">
+            <div class="mb-2">
+                <label for="cepInput" class="form-label font-weight-bold">CEP:</label>
+                <div class="input-group">
+                    <input type="text" 
+                           id="cepInput" 
+                           class="form-control" 
+                           placeholder="00000-000" 
+                           maxlength="9" 
+                           @bind-value="cepInput" />
+                    <button class="btn btn-primary" type="submit" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span>Consultando...</span>
+                        }
+                        else
+                        {
+                            <span>Buscar</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </EditForm>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3 mb-0" role="alert">
+                @errorMessage
+            </div>
+        }
+    </div>
+
+    @if (enderecoResult != null)
+    {
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Dados do Endereço</h5>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-striped table-hover mb-0">
+                    <tbody>
+                        <tr>
+                            <th scope="row" style="width: 35%;">CEP</th>
+                            <td>@FormatCep(enderecoResult.cep)</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Logradouro</th>
+                            <td>@(string.IsNullOrWhiteSpace(enderecoResult.street) ? "-" : enderecoResult.street)</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Bairro</th>
+                            <td>@(string.IsNullOrWhiteSpace(enderecoResult.neighborhood) ? "-" : enderecoResult.neighborhood)</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Cidade</th>
+                            <td>@enderecoResult.city</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Estado (UF)</th>
+                            <td>@enderecoResult.state</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Provedor/Serviço</th>
+                            <td><span class="badge bg-secondary">@enderecoResult.service</span></td>
+                        </tr>
+                        @if (enderecoResult.ibge != null)
+                        {
+                            <tr>
+                                <th scope="row">Código IBGE (Cidade)</th>
+                                <td>@enderecoResult.ibge.city</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Código IBGE (Estado)</th>
+                                <td>@enderecoResult.ibge.state</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string cepInput = string.Empty;
+    private bool isLoading = false;
+    private string? errorMessage;
+    private BrasilCep? enderecoResult;
+
+    private async Task BuscarCep()
+    {
+        errorMessage = null;
+        enderecoResult = null;
+
+        // Sanitização simples para manter apenas números
+        var cepNumerico = new string(cepInput.Where(char.IsDigit).ToArray());
+
+        if (string.IsNullOrWhiteSpace(cepNumerico) || cepNumerico.Length != 8)
+        {
+            errorMessage = "Digite um CEP válido com 8 dígitos.";
+            return;
+        }
+
+        isLoading = true;
+
+        try
+        {
+            // A rota v2 da BrasilAPI retorna o objeto com o detalhamento do IBGE se disponível
+            enderecoResult = await Http.GetFromJsonAsync<BrasilCep>($"https://brasilapi.com.br/api/cep/v2/{cepNumerico}");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            errorMessage = "CEP não encontrado na base de dados da BrasilAPI.";
+        }
+        catch (Exception)
+        {
+            errorMessage = "Erro de conexão ao buscar o CEP. Tente novamente mais tarde.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string FormatCep(string? cep)
+    {
+        if (string.IsNullOrWhiteSpace(cep) || cep.Length != 8) return cep ?? string.Empty;
+        return Convert.ToUInt64(cep).ToString(@"00000\-000");
+    }
+}
